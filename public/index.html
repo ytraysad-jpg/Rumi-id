@@ -79,12 +79,27 @@ function renderChips() {
   chips("#langs", LANGS, "lang", () => load(true));
 }
 
+const BASES = [
+  u => "/api/" + u,
+  u => "https://api.mangadex.org/" + u,
+  u => "https://corsproxy.io/?url=" + encodeURIComponent("https://api.mangadex.org/" + u),
+  u => "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://api.mangadex.org/" + u),
+];
+let okBase = 0;
 async function api(path, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) (Array.isArray(v) ? v : [v]).forEach(x => qs.append(k, x));
-  const r = await fetch("/api/" + path + "?" + qs);
-  if (!r.ok) throw new Error("API " + r.status);
-  return r.json();
+  const u = path + "?" + qs;
+  let err;
+  for (let n = 0; n < BASES.length; n++) {
+    const i = (okBase + n) % BASES.length;
+    try {
+      const r = await fetch(BASES[i](u));
+      if (!r.ok) throw new Error("API " + r.status);
+      const j = await r.json(); okBase = i; return j;
+    } catch (e) { err = e; }
+  }
+  throw err;
 }
 
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
