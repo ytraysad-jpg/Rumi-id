@@ -1,7 +1,10 @@
 // Vercel Function: proxy ke MangaDex dengan User-Agent sendiri
 module.exports = async (req, res) => {
   try {
-    const target = "https://api.mangadex.org" + req.url.replace(/^\/api/, "");
+    const u = new URL(req.url, "http://localhost");
+    // Vercel menambah parameter bantu ini, MangaDex menolaknya -> buang
+    ["___path", "path"].forEach(k => u.searchParams.delete(k));
+    const target = "https://api.mangadex.org" + u.pathname.replace(/^\/api/, "") + u.search;
     const r = await fetch(target, {
       headers: { "User-Agent": "MangaWebApp/1.0 (personal project)", Accept: "application/json" },
     });
