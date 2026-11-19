@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Baca Komik</title>
+<style>
+:root{--bg:#0b0b0d;--card:#17171b;--line:#26262c;--txt:#f2f2f4;--mut:#8b8b95;--acc:#fff}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+body{background:var(--bg);color:var(--txt);font-family:system-ui,sans-serif;padding-bottom:40px}
+.wrap{max-width:720px;margin:0 auto;padding:14px}
+h1{font-size:20px;display:flex;align-items:center;gap:10px;margin:6px 0 14px}
+.search{display:flex;gap:8px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:8px 8px 8px 14px}
+.search input{flex:1;background:none;border:0;outline:0;color:var(--txt);font-size:15px}
+.search button{background:#fff;border:0;border-radius:10px;width:44px;font-size:18px}
+.row{display:flex;gap:8px;overflow-x:auto;margin-top:12px;scrollbar-width:none}
+.row::-webkit-scrollbar{display:none}
+.chip{flex:none;padding:10px 16px;border-radius:999px;background:var(--card);border:1px solid var(--line);color:var(--mut);font-size:14px;cursor:pointer}
+.chip.on{background:var(--acc);color:#000;font-weight:600}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:16px}
+.card{background:var(--card);border-radius:12px;overflow:hidden;cursor:pointer;position:relative}
+.card img{width:100%;aspect-ratio:2/3;object-fit:cover;display:block;background:#222}
+.badge{position:absolute;top:6px;left:6px;background:#fff;color:#000;font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px}
+.card p{font-size:12px;font-weight:600;padding:8px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:44px}
+.msg{text-align:center;color:var(--mut);padding:40px 0;grid-column:1/-1}
+.more{display:block;margin:20px auto;padding:12px 28px;border-radius:12px;border:1px solid var(--line);background:var(--card);color:var(--txt)}
+.overlay{position:fixed;inset:0;background:var(--bg);overflow-y:auto;z-index:10;display:none}
+.overlay.show{display:block}
+.back{background:var(--card);border:1px solid var(--line);color:var(--txt);width:44px;height:44px;border-radius:50%;font-size:20px}
+.det{display:flex;gap:14px;margin:14px 0}
+.det img{width:120px;border-radius:10px;align-self:flex-start}
+.det h2{font-size:18px;margin-bottom:6px}
+.det small{color:var(--mut);display:block;margin-bottom:10px}
+.desc{color:var(--mut);font-size:13px;line-height:1.5;margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
+.ch{display:flex;justify-content:space-between;padding:14px;background:var(--card);border-radius:10px;margin-bottom:8px;font-size:14px;cursor:pointer}
+.ch.read{color:var(--mut)}
+.pages img{width:100%;display:block;min-height:200px;background:#111}
+.nav{display:flex;gap:8px;padding:12px;position:sticky;top:0;background:rgba(11,11,13,.92);backdrop-filter:blur(8px);align-items:center}
+.nav button{flex:1;padding:12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--txt)}
+.nav button:disabled{opacity:.3}
+.nav .back{flex:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📖 Baca Komik</h1>
+  <form class="search" id="sf"><input id="q" placeholder="Cari manga, manhwa, manhua…"><button>→</button></form>
+  <div class="row" id="tabs"></div>
+  <div class="row" id="types"></div>
+  <div class="row" id="stats"></div>
+  <div class="row" id="langs"></div>
+  <div class="grid" id="grid"></div>
+  <button class="more" id="more" style="display:none">Muat lagi</button>
+</div>
+
+<div class="overlay" id="detail"><div class="wrap" id="detailBody"></div></div>
+<div class="overlay" id="reader"><div class="nav" id="rnav"></div><div class="pages" id="pages"></div></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const LS = (k, d) => { try { return JSON.parse(localStorage.getItem(k)) ?? d } catch { return d } };
+const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)) } catch {} };
+
+const S = { tab: "latest", type: "all", status: "all", lang: "en", q: "", offset: 0, total: 0 };
+const TABS = [["latest","Update Terbaru"],["popular","Populer"],["fav","Favorit"],["hist","Riwayat"]];
+const TYPES = [["all","Semua"],["ja","Manga"],["ko","Manhwa"],["zh","Manhua"]];
+const STATS = [["all","Semua Status"],["ongoing","Ongoing"],["completed","Tamat"]];
+const LANGS = [["en","Bahasa: English"],["id","Bahasa: Indonesia"]];
+const LIMIT = 24;
+
+function chips(el, list, key, onPick) {
+  $(el).innerHTML = list.map(([v, l]) => `<div class="chip ${S[key] === v ? "on" : ""}" data-v="${v}">${l}</div>`).join("");
+  $(el).onclick = e => { const v = e.target.dataset.v; if (!v) return; S[key] = v; renderChips(); onPick(); };
+}
+function renderChips() {
+  chips("#tabs", TABS, "tab", () => load(true));
+  chips("#types", TYPES, "type", () => load(true));
+  chips("#stats", STATS, "status", () => load(true));
+  chips("#langs", LANGS, "lang", () => load(true));
+}
+
+async function api(path, params = {}) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) (Array.isArray(v) ? v : [v]).forEach(x => qs.append(k, x));
+  const r = await fetch("/api/" + path + "?" + qs);
+  if (!r.ok) throw new Error("API " + r.status);
+  return r.json();
+}
+
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
+const title = m => m.attributes.title.en || Object.values(m.attributes.title)[0] || "Tanpa judul";
+const cover = (m, size = 256) => {
+  const f = m.relationships.find(r => r.type === "cover_art")?.attributes?.fileName;
+  return f ? `https://uploads.mangadex.org/covers/${m.id}/${f}.${size}.jpg` : "";
+};
+const badge = m => ({ ja: "MANGA", ko: "MANHWA", zh: "MANHUA", "zh-hk": "MANHUA" }[m.attributes.originalLanguage] || "KOMIK");
+
+async function load(reset) {
+  if (reset) { S.offset = 0; $("#grid").innerHTML = ""; }
+  const grid = $("#grid"); $("#more").style.display = "none";
+  const p = {
+    limit: LIMIT, offset: S.offset, "includes[]": "cover_art",
+    "contentRating[]": ["safe", "suggestive"], "availableTranslatedLanguage[]": S.lang,
+  };
+  if (S.q) p.title = S.q;
+  if (S.type === "zh") p["originalLanguage[]"] = ["zh", "zh-hk"];
+  else if (S.type !== "all") p["originalLanguage[]"] = S.type;
+  if (S.status !== "all") p["status[]"] = S.status;
+  if (S.tab === "latest") p["order[latestUploadedChapter]"] = "desc";
+  if (S.tab === "popular") p["order[followedCount]"] = "desc";
+  if (S.tab === "fav" || S.tab === "hist") {
+    const ids = S.tab === "fav" ? LS("fav", []) : LS("hist", []).map(h => h.id);
+    if (!ids.length) { grid.innerHTML = `<div class="msg">Belum ada data.</div>`; return; }
+    p["ids[]"] = ids.slice(S.offset, S.offset + LIMIT); delete p["availableTranslatedLanguage[]"];
+    p.limit = LIMIT; delete p.offset;
+  }
+  if (reset) grid.innerHTML = `<div class="msg">Memuat…</div>`;
+  try {
+    const d = await api("manga", p);
+    if (reset) grid.innerHTML = "";
+    if (!d.data.length && reset) grid.innerHTML = `<div class="msg">Tidak ada hasil.</div>`;
+    grid.insertAdjacentHTML("beforeend", d.data.map(m => `
+      <div class="card" data-id="${m.id}"><span class="badge">${badge(m)}</span>
+      <img loading="lazy" src="${cover(m)}" alt=""><p>${esc(title(m))}</p></div>`).join(""));
+    S.offset += d.data.length; S.total = d.total ?? d.data.length;
+    if (S.tab !== "fav" && S.tab !== "hist" && S.offset < S.total) $("#more").style.display = "block";
+  } catch (e) { grid.innerHTML = `<div class="msg">Gagal memuat: ${esc(e.message)}</div>`; }
+}
+
+$("#grid").onclick = e => { const c = e.target.closest(".card"); if (c) openDetail(c.dataset.id); };
+$("#more").onclick = () => load(false);
+$("#sf").onsubmit = e => { e.preventDefault(); S.q = $("#q").value.trim(); S.tab = "latest"; renderChips(); load(true); };
+
+let chapters = [], curManga = null;
+async function openDetail(id) {
+  const box = $("#detailBody"); $("#detail").classList.add("show"); $("#detail").scrollTop = 0;
+  box.innerHTML = `<div class="msg">Memuat…</div>`;
+  try {
+    const [md, feed] = await Promise.all([
+      api("manga/" + id, { "includes[]": "cover_art" }),
+      api(`manga/${id}/feed`, { "translatedLanguage[]": S.lang, "order[chapter]": "desc", limit: 500, "includeExternalUrl": 0, "contentRating[]": ["safe", "suggestive"] }),
+    ]);
+    const m = md.data; curManga = m;
+    const seen = new Set();
+    chapters = feed.data.filter(c => c.attributes.pages > 0 && !seen.has(c.attributes.chapter) && seen.add(c.attributes.chapter));
+    const read = LS("read", {}); const isFav = LS("fav", []).includes(id);
+    const desc = m.attributes.description.en || Object.values(m.attributes.description)[0] || "";
+    box.innerHTML = `
+      <button class="back" onclick="$('#detail').classList.remove('show')">←</button>
+      <div class="det"><img src="${cover(m, 512)}" alt="">
+        <div><h2>${esc(title(m))}</h2><small>${badge(m)} · ${esc(m.attributes.status)} · ${chapters.length} chapter</small>
+        <button class="chip ${isFav ? "on" : ""}" id="favBtn">${isFav ? "♥ Favorit" : "♡ Tambah favorit"}</button></div></div>
+      <div class="desc">${esc(desc)}</div>
+      ${chapters.length ? chapters.map((c, i) => `<div class="ch ${read[c.id] ? "read" : ""}" data-i="${i}">
+        <span>Ch. ${esc(c.attributes.chapter ?? "?")}${c.attributes.title ? " – " + esc(c.attributes.title) : ""}</span>
+        <span style="color:var(--mut)">${new Date(c.attributes.publishAt).toLocaleDateString("id-ID")}</span></div>`).join("")
+        : `<div class="msg">Belum ada chapter di bahasa ini. Coba ganti bahasa.</div>`}`;
+    $("#favBtn").onclick = () => {
+      let f = LS("fav", []); f = f.includes(id) ? f.filter(x => x !== id) : [id, ...f]; save("fav", f); openDetail(id);
+    };
+    box.querySelectorAll(".ch").forEach(el => el.onclick = () => openChapter(+el.dataset.i));
+  } catch (e) { box.innerHTML = `<button class="back" onclick="$('#detail').classList.remove('show')">←</button><div class="msg">Gagal: ${esc(e.message)}</div>`; }
+}
+
+async function openChapter(i) {
+  const c = chapters[i]; if (!c) return;
+  const rd = $("#reader"); rd.classList.add("show"); rd.scrollTop = 0;
+  $("#rnav").innerHTML = `<button class="back" id="rb">←</button>
+    <button id="np" ${i >= chapters.length - 1 ? "disabled" : ""}>‹ Sebelumnya</button>
+    <button id="nn" ${i <= 0 ? "disabled" : ""}>Berikutnya ›</button>`;
+  $("#rb").onclick = () => { rd.classList.remove("show"); $("#pages").innerHTML = ""; };
+  $("#np").onclick = () => openChapter(i + 1);
+  $("#nn").onclick = () => openChapter(i - 1);
+  $("#pages").innerHTML = `<div class="msg">Memuat halaman…</div>`;
+  const read = LS("read", {}); read[c.id] = 1; save("read", read);
+  let h = LS("hist", []).filter(x => x.id !== curManga.id); h.unshift({ id: curManga.id }); save("hist", h.slice(0, 100));
+  try {
+    const d = await api("at-home/server/" + c.id);
+    $("#pages").innerHTML = d.chapter.data.map(f =>
+      `<img loading="lazy" src="${d.baseUrl}/data/${d.chapter.hash}/${f}" alt="">`).join("");
+  } catch (e) { $("#pages").innerHTML = `<div class="msg">Gagal memuat: ${esc(e.message)}</div>`; }
+}
+
+renderChips(); load(true);
+</script>
+</body>
+</html>
