@@ -19,20 +19,22 @@ const BASES = [
   u => "https://api.allorigins.win/raw?url=" + encodeURIComponent("https://api.mangadex.org/" + u),
 ];
 let okBase = 0;
+const NAMES = ["Proxy Vercel", "Langsung", "Proxy 2", "Proxy 3"];
 async function api(path, params = {}) {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) (Array.isArray(v) ? v : [v]).forEach(x => qs.append(k, x));
-  const u = path + "?" + qs; let err;
+  const u = path + "?" + qs; const errs = [];
   for (let n = 0; n < BASES.length; n++) {
     const i = (okBase + n) % BASES.length;
+    const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), i === 0 ? 25000 : 10000);
     try {
-      const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 8000);
-      const r = await fetch(BASES[i](u), { signal: ac.signal }).finally(() => clearTimeout(tm));
-      if (!r.ok) throw new Error("API " + r.status);
+      const r = await fetch(BASES[i](u), { signal: ac.signal });
+      if (!r.ok) throw new Error("kode " + r.status);
       const j = await r.json(); okBase = i; return j;
-    } catch (e) { err = e; }
+    } catch (e) { errs.push(NAMES[i] + ": " + (e.name === "AbortError" ? "terlalu lama" : e.message)); }
+    finally { clearTimeout(tm); }
   }
-  throw err;
+  throw new Error(errs.join(" | "));
 }
 
 /* ---------- helpers ---------- */
@@ -94,7 +96,7 @@ async function load(reset) {
         <div class="ov"><p>${esc(title(m))}</p></div></div>`).join(""));
     S.offset += d.data.length; S.total = d.total ?? d.data.length;
     if (!["fav", "hist"].includes(S.tab) && S.offset < S.total) $("#more").style.display = "block";
-  } catch (e) { grid.innerHTML = `<div class="msg">Gagal memuat data (${esc(e.message)}).<br><br><button class="chip on" onclick="load(true)">Coba lagi</button></div>`; }
+  } catch (e) { grid.innerHTML = `<div class="msg">Gagal memuat data.<br><small style="opacity:.7">${esc(e.message)}</small><br><br><button class="chip on" onclick="load(true)">Coba lagi</button></div>`; }
 }
 $("#grid").onclick = e => { const c = e.target.closest(".card"); if (c) openDetail(c.dataset.id); };
 $("#more").onclick = () => load(false);
