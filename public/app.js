@@ -26,7 +26,8 @@ async function api(path, params = {}) {
   for (let n = 0; n < BASES.length; n++) {
     const i = (okBase + n) % BASES.length;
     try {
-      const r = await fetch(BASES[i](u));
+      const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 8000);
+      const r = await fetch(BASES[i](u), { signal: ac.signal }).finally(() => clearTimeout(tm));
       if (!r.ok) throw new Error("API " + r.status);
       const j = await r.json(); okBase = i; return j;
     } catch (e) { err = e; }
@@ -93,7 +94,7 @@ async function load(reset) {
         <div class="ov"><p>${esc(title(m))}</p></div></div>`).join(""));
     S.offset += d.data.length; S.total = d.total ?? d.data.length;
     if (!["fav", "hist"].includes(S.tab) && S.offset < S.total) $("#more").style.display = "block";
-  } catch (e) { grid.innerHTML = `<div class="msg">Gagal memuat (${esc(e.message)}). Coba refresh.</div>`; }
+  } catch (e) { grid.innerHTML = `<div class="msg">Gagal memuat data (${esc(e.message)}).<br><br><button class="chip on" onclick="load(true)">Coba lagi</button></div>`; }
 }
 $("#grid").onclick = e => { const c = e.target.closest(".card"); if (c) openDetail(c.dataset.id); };
 $("#more").onclick = () => load(false);
