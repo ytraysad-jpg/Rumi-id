@@ -29,7 +29,10 @@ async function api(path, params = {}) {
     const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), i === 0 ? 25000 : 10000);
     try {
       const r = await fetch(BASES[i](u), { signal: ac.signal });
-      if (!r.ok) throw new Error("kode " + r.status);
+      if (!r.ok) {
+        let d = ""; try { d = (await r.json()).errors?.[0]?.detail || ""; } catch {}
+        throw new Error("kode " + r.status + (d ? " (" + d.slice(0, 140) + ")" : ""));
+      }
       const j = await r.json(); okBase = i; return j;
     } catch (e) { errs.push(NAMES[i] + ": " + (e.name === "AbortError" ? "terlalu lama" : e.message)); }
     finally { clearTimeout(tm); }
