@@ -1,4 +1,5 @@
 // Vercel Function: proxy ke MangaDex
+// Vercel Function: proxy ke MangaDex
 module.exports = async (req, res) => {
   try {
     const u = new URL(req.url, "http://localhost");
